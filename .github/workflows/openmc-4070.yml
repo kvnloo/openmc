@@ -1,0 +1,71 @@
+name: OpenMC 4070 native density closure
+'on':
+  push:
+    branches: [probe/openmc-4070-closure-20260924]
+permissions:
+  contents: read
+concurrency:
+  group: openmc-4070-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  baseline:
+    if: github.repository == 'kvnloo/openmc'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check syntax and pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostic-results
+          git rev-parse HEAD | tee diagnostic-results/commit.txt
+          git diff --exit-code 1d75981dbf3fd78962e516c12b550d034f2e7daa -- src include openmc cmake CMakeLists.txt pyproject.toml
+          python -m py_compile diagnostics/native_density_closure.py
+      - name: Install build and Python dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libhdf5-dev
+          python -m pip install .
+          python -m pip freeze > diagnostic-results/packages.txt
+      - name: Build unmodified native OpenMC
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOPENMC_BUILD_TESTS=OFF -DOPENMC_USE_MPI=OFF -DOPENMC_USE_DAGMC=OFF -DOPENMC_USE_LIBMESH=OFF -DOPENMC_FORCE_FETCHCONTENT=ON 2>&1 | tee diagnostic-results/configure.log
+          cmake --build build --parallel 2 2>&1 | tee diagnostic-results/build.log
+          build/bin/openmc --version | tee diagnostic-results/executable.txt
+      - name: Run three native density cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$GITHUB_WORKSPACE/build/bin:$PATH"
+          python diagnostics/native_density_closure.py "$GITHUB_WORKSPACE/diagnostic-results/native" 2>&1 | tee diagnostic-results/native.log
+      - name: Explain baseline outcome
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## OpenMC #4070 baseline diagnostic'
+            echo 'Three synthetic non-fissile one-group fixed-source cases; no production patch.'
+            echo 'A red run is not sufficient evidence. Inspect native/receipt.json.'
+            echo 'physics_assertion_failed means unit-density control passed but a changed-density closure check failed.'
+            echo 'Build, import, empty-tally, and setup errors are not a reproduction.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: openmc-4070-baseline-evidence
+          path: diagnostic-results/
+          if-no-files-found: warn
