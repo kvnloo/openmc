@@ -14,6 +14,8 @@ from pathlib import Path
 import sys
 import traceback
 
+import h5py
+
 
 def run_case(openmc, root: Path, density: float) -> dict:
     directory = root / f'density_{density:g}'
@@ -21,8 +23,8 @@ def run_case(openmc, root: Path, density: float) -> dict:
     openmc.reset_auto_ids()
     groups = openmc.mgxs.EnergyGroups([0., 20.e6])
     xs = openmc.XSdata('H1', groups)
-    # A synthetic nuclide dataset keeps the material and cell mass densities
-    # well-defined; these numbers are not physical H1 nuclear data.
+    # Synthetic microscopic data, not physical H1 nuclear data. A unit
+    # number density below gives unit base macroscopic total cross section.
     xs.atomic_weight_ratio = 1.0
     xs.order = 0
     xs.set_total([1.0])
@@ -35,12 +37,14 @@ def run_case(openmc, root: Path, density: float) -> dict:
 
     material = openmc.Material(name='synthetic_nonfissile')
     material.add_nuclide('H1', 1.0)
-    material.set_density('g/cm3', 1.0)
+    material.set_density('atom/b-cm', 1.0)
     materials = openmc.Materials([material])
     materials.cross_sections = str(data_path)
     sphere = openmc.Sphere(r=5., boundary_type='vacuum')
     cell = openmc.Cell(fill=material, region=-sphere)
-    cell.density = density  # mass density divided by base material's 1 g/cm3
+    # At this source pin, MG density_gpcc() returns number density. Match
+    # that denominator explicitly; do not label this input as g/cm3.
+    cell.density = density
 
     settings = openmc.Settings()
     settings.energy_mode = 'multi-group'
@@ -60,6 +64,15 @@ def run_case(openmc, root: Path, density: float) -> dict:
     model = openmc.Model(openmc.Geometry([cell]), materials, settings,
                          openmc.Tallies([tally]))
     statepoint = model.run(cwd=directory, output=False, threads=1)
+    with h5py.File(directory / 'summary.h5') as summary:
+        base_number_density = float(
+            summary[f'materials/material {material.id}/atom_density'][()]
+        )
+    native_multiplier = density / base_number_density
+    if not math.isclose(base_number_density, 1.0, rel_tol=1.e-12):
+        raise RuntimeError(f'Native base number density is not unity: {base_number_density}')
+    if not math.isclose(native_multiplier, density, rel_tol=1.e-12):
+        raise RuntimeError(f'Native multiplier differs from intended input: {native_multiplier}')
     with openmc.StatePoint(statepoint) as sp:
         result = sp.get_tally(name='density_closure')
         values = {score: float(result.get_values(scores=[score]).ravel()[0])
@@ -68,7 +81,9 @@ def run_case(openmc, root: Path, density: float) -> dict:
         raise RuntimeError(f'Invalid probe setup or empty tally: {values}')
     sigma = {score: values[score]/values['flux'] for score in tally.scores if score != 'flux'}
     closure_error = abs(sigma['total']-sigma['absorption']-sigma['scatter'])/sigma['total']
-    return {'density_g_cm3': density, 'density_multiplier': density,
+    return {'cell_density_input': density,
+            'base_number_density_atom_b_cm': base_number_density,
+            'density_multiplier': native_multiplier,
             'means': values, 'scores_per_flux': sigma,
             'relative_closure_error': closure_error,
             'closure_passed': closure_error < 1.e-10}
