@@ -31,14 +31,12 @@ jobs:
           git rev-parse HEAD | tee diagnostic-results/commit.txt
           git diff --exit-code 1d75981dbf3fd78962e516c12b550d034f2e7daa -- src include openmc cmake CMakeLists.txt pyproject.toml
           python -m py_compile diagnostics/native_density_closure.py
-      - name: Install build and Python dependencies
+      - name: Install native build dependencies
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y build-essential cmake libhdf5-dev
-          python -m pip install .
-          python -m pip freeze > diagnostic-results/packages.txt
       - name: Build unmodified native OpenMC
         shell: bash
         run: |
@@ -46,6 +44,32 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOPENMC_BUILD_TESTS=OFF -DOPENMC_USE_MPI=OFF -DOPENMC_USE_DAGMC=OFF -DOPENMC_USE_LIBMESH=OFF -DOPENMC_FORCE_FETCHCONTENT=ON 2>&1 | tee diagnostic-results/configure.log
           cmake --build build --parallel 2 2>&1 | tee diagnostic-results/build.log
           build/bin/openmc --version | tee diagnostic-results/executable.txt
+      - name: Install Python package after the shared library exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f openmc/lib/libopenmc.so
+          python -m pip install . 2>&1 | tee diagnostic-results/install.log
+          python -m pip freeze > diagnostic-results/packages.txt
+          # Import away from the checkout so a source-tree import cannot hide
+          # an incomplete installed package. Check the actual library bytes.
+          cd "$RUNNER_TEMP"
+          python - <<'PY' 2>&1 | tee "$GITHUB_WORKSPACE/diagnostic-results/import-smoke.log"
+          import hashlib
+          import os
+          from pathlib import Path
+          import openmc
+          import openmc.lib
+          source = Path(os.environ['GITHUB_WORKSPACE']) / 'openmc/lib/libopenmc.so'
+          installed = Path(openmc.lib.__file__).parent / 'libopenmc.so'
+          assert source.resolve() != installed.resolve(), 'Smoke check imported the checkout'
+          digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+          assert digest(source) == digest(installed), 'Installed library differs from this build'
+          print('Python package:', openmc.__file__)
+          print('Native library:', installed)
+          print('Native SHA256:', digest(installed))
+          print('Installed native import and build-identity check passed')
+          PY
       - name: Run three native density cases
         shell: bash
         run: |
