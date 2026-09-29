@@ -1132,11 +1132,10 @@ void transport_event_based()
     // Initialize all particle histories for this subiteration
     process_init_events(n_particles, source_offset);
     process_transport_events();
-    process_death_events(n_particles);
-
     if (simulation::lost_particle_limit_reached.load()) {
       return;
     }
+    process_death_events(n_particles);
 
     // Adjust remaining work and source offset variables
     remaining_work -= n_particles;
@@ -1171,11 +1170,10 @@ void transport_event_based_shared_secondary()
 
     process_init_events(n_particles, source_offset);
     process_transport_events();
-    process_death_events(n_particles);
-
     if (simulation::lost_particle_limit_reached.load()) {
       return;
     }
+    process_death_events(n_particles);
 
     collect_event_secondary_banks(n_particles);
 
@@ -1239,11 +1237,10 @@ void transport_event_based_shared_secondary()
       process_init_secondary_events(
         n_particles, sec_offset, simulation::shared_secondary_bank_read);
       process_transport_events();
-      process_death_events(n_particles);
-
       if (simulation::lost_particle_limit_reached.load()) {
         return;
       }
+      process_death_events(n_particles);
 
       collect_event_secondary_banks(n_particles);
 
