@@ -867,26 +867,30 @@ void Particle::cross_periodic_bc(
 
 void Particle::mark_as_lost(const char* message)
 {
-  // Print warning and write lost particle file
   warning(message);
+  wgt() = 0.0;
+
+  // Increment the number of lost particles and capture the value atomically so
+  // the limit checks below do not race with another transport thread.
+  int n_lost_particles;
+#pragma omp atomic capture
+  n_lost_particles = ++simulation::n_lost_particles;
+
   if (settings::max_write_lost_particles < 0 ||
-      simulation::n_lost_particles < settings::max_write_lost_particles) {
+      n_lost_particles <= settings::max_write_lost_particles) {
     write_restart();
   }
-  // Increment number of lost particles
-  wgt() = 0.0;
-#pragma omp atomic
-  simulation::n_lost_particles += 1;
 
   // Count the total number of simulated particles (on this processor)
   auto n = simulation::current_batch * settings::gen_per_batch *
            simulation::work_per_rank;
 
-  // Abort the simulation if the maximum number of lost particles has been
-  // reached
-  if (simulation::n_lost_particles >= settings::max_lost_particles &&
-      simulation::n_lost_particles >= settings::rel_max_lost_particles * n) {
-    fatal_error("Maximum number of lost particles has been reached.");
+  // Defer the fatal error until the current transport parallel region has
+  // joined. Calling std::exit() from an OpenMP worker can race with sibling
+  // threads that are still using process-global libraries such as HDF5.
+  if (n_lost_particles >= settings::max_lost_particles &&
+      n_lost_particles >= settings::rel_max_lost_particles * n) {
+    simulation::lost_particle_limit_reached.store(true);
   }
 }
 
