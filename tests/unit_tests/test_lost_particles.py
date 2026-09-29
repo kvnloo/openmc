@@ -30,6 +30,20 @@ def model():
     return model
 
 
+def test_max_lost_particles_multithreaded(model: openmc.Model, run_in_tmpdir):
+    model.settings.max_lost_particles = 1
+    model.settings.max_write_lost_particles = 5
+
+    kwargs = {'openmc_exec': config['exe']}
+    if config['mpi']:
+        kwargs['mpi_args'] = [config['mpiexec'], '-n', config['mpi_np']]
+
+    with pytest.raises(
+        RuntimeError, match='Maximum number of lost particles has been reached.'
+    ):
+        model.run(threads=2, **kwargs)
+
+
 def test_max_write_lost_particles(model: openmc.Model, run_in_tmpdir):
     # Set maximum number of lost particle restart files
     model.settings.max_write_lost_particles = 5
