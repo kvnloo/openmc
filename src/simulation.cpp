@@ -287,6 +287,10 @@ int openmc_next_batch(int* status)
       }
     }
 
+    if (simulation::lost_particle_limit_reached.load()) {
+      fatal_error("Maximum number of lost particles has been reached.");
+    }
+
     // Accumulate time for transport
     simulation::time_transport.stop();
 
@@ -338,6 +342,7 @@ double k_col_tra {0.0};
 double k_abs_tra {0.0};
 double log_spacing;
 int n_lost_particles {0};
+std::atomic<bool> lost_particle_limit_reached {false};
 bool need_depletion_rx {false};
 int restart_batch;
 bool satisfy_triggers {false};
@@ -1030,6 +1035,9 @@ void transport_history_based_shared_secondary()
       p.local_secondary_bank().clear();
     }
   }
+  if (simulation::lost_particle_limit_reached.load()) {
+    return;
+  }
   collect_sorted_history_secondary_banks(thread_banks);
   thread_banks.clear();
 
@@ -1090,6 +1098,9 @@ void transport_history_based_shared_secondary()
         p.local_secondary_bank().clear();
       }
     } // End of transport loop over tracks in shared secondary bank
+    if (simulation::lost_particle_limit_reached.load()) {
+      return;
+    }
     simulation::shared_secondary_bank_write =
       std::move(simulation::shared_secondary_bank_read);
     simulation::shared_secondary_bank_read = SharedArray<SourceSite>();
@@ -1122,6 +1133,10 @@ void transport_event_based()
     process_init_events(n_particles, source_offset);
     process_transport_events();
     process_death_events(n_particles);
+
+    if (simulation::lost_particle_limit_reached.load()) {
+      return;
+    }
 
     // Adjust remaining work and source offset variables
     remaining_work -= n_particles;
@@ -1157,6 +1172,10 @@ void transport_event_based_shared_secondary()
     process_init_events(n_particles, source_offset);
     process_transport_events();
     process_death_events(n_particles);
+
+    if (simulation::lost_particle_limit_reached.load()) {
+      return;
+    }
 
     collect_event_secondary_banks(n_particles);
 
@@ -1221,6 +1240,10 @@ void transport_event_based_shared_secondary()
         n_particles, sec_offset, simulation::shared_secondary_bank_read);
       process_transport_events();
       process_death_events(n_particles);
+
+      if (simulation::lost_particle_limit_reached.load()) {
+        return;
+      }
 
       collect_event_secondary_banks(n_particles);
 
