@@ -82,4 +82,4 @@ def test_lost_particles(run_in_tmpdir, broken_dagmc_model):
 
     broken_dagmc_model.export_to_xml()
     with pytest.raises(RuntimeError, match='Maximum number of lost particles has been reached.'):
-        openmc.run()
+        openmc.run(threads=2)
