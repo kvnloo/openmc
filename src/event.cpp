@@ -202,6 +202,10 @@ void process_transport_events()
     } else if (max == simulation::collision_queue.size()) {
       process_collision_events();
     }
+
+    if (simulation::lost_particle_limit_reached.load()) {
+      break;
+    }
   }
 }
 
