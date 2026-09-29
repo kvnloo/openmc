@@ -986,6 +986,9 @@ void transport_history_based()
     Particle p;
 #pragma omp for schedule(runtime)
     for (int64_t i_work = 1; i_work <= simulation::work_per_rank; ++i_work) {
+      if (simulation::lost_particle_limit_reached.load()) {
+        continue;
+      }
       initialize_particle_track(p, i_work, false);
       transport_history_based_single_particle(p);
     }
@@ -1027,6 +1030,9 @@ void transport_history_based_shared_secondary()
 
 #pragma omp for schedule(runtime)
     for (int64_t i = 1; i <= simulation::work_per_rank; i++) {
+      if (simulation::lost_particle_limit_reached.load()) {
+        continue;
+      }
       initialize_particle_track(p, i, false);
       transport_history_based_single_particle(p);
       for (auto& site : p.local_secondary_bank()) {
@@ -1088,6 +1094,9 @@ void transport_history_based_shared_secondary()
 #pragma omp for schedule(runtime)
       for (int64_t i = 1; i <= simulation::shared_secondary_bank_read.size();
            i++) {
+        if (simulation::lost_particle_limit_reached.load()) {
+          continue;
+        }
         initialize_particle_track(p, i, true);
         SourceSite& site = simulation::shared_secondary_bank_read[i - 1];
         p.event_revive_from_secondary(site);
