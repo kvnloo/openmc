@@ -4,7 +4,7 @@ import openmc
 import pytest
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def dagmc_legacy_path():
     """Path to the shared legacy DAGMC unit-test geometry."""
     return Path(__file__).parent / "dagmc.h5m"
