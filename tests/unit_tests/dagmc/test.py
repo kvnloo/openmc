@@ -1,7 +1,6 @@
 import shutil
 
 import numpy as np
-from pathlib import Path
 import pytest
 
 import openmc
@@ -15,7 +14,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(scope="module", autouse=True)
-def dagmc_model(request):
+def dagmc_model(dagmc_legacy_path):
 
     model = openmc.model.Model()
 
@@ -31,7 +30,7 @@ def dagmc_model(request):
     model.settings.source = source
 
     # geometry
-    dagmc_file = Path(request.fspath).parent / 'dagmc.h5m'
+    dagmc_file = dagmc_legacy_path
     dagmc_universe = openmc.DAGMCUniverse(dagmc_file)
     model.geometry = openmc.Geometry(dagmc_universe)
 
@@ -66,11 +65,9 @@ def dagmc_model(request):
     mats = openmc.Materials([u235, water])
     model.materials = mats
 
-    # location of  dagmc file in test directory
-    dagmc_file = request.fspath.dirpath() + "/dagmc.h5m"
     # move to a temporary directory
     with cdtemp():
-        shutil.copyfile(dagmc_file, "./dagmc.h5m")
+        shutil.copyfile(dagmc_legacy_path, "./dagmc.h5m")
         model.export_to_xml()
         openmc.lib.init()
         yield
